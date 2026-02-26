@@ -160,8 +160,8 @@ def app():
 def check_credentials(accounts, username, password):
     for account in accounts:
         if username.lower() == account["Username"].lower() and check_password(password, account["Password"]):
-            return True
-    return False
+            return True, account["Username"]
+    return False, _
 
 
 def hash_password(password):
@@ -220,7 +220,8 @@ def login_page():
             submitted = st.form_submit_button("Login")
 
             if submitted:
-                if check_credentials(accounts, username, password):
+                checked, username = check_credentials(accounts, username, password)
+                if checked:
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = username
                     st.success("Logged in!")
