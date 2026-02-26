@@ -103,11 +103,13 @@ def letter_quiz(data):
         del bag[st.session_state["random_pair"]]
 
         st.markdown(f"What is the word for {st.session_state['random_pair']}?")
-        if st.button("Show"):
+        if st.button("Show", shortcut="Space"):
             st.markdown(f"Word is \"{data[st.session_state['random_pair']]}\"")
+            shown = True
         else:
             st.markdown(f"Word is -----")
-        if st.button("Next"):
+            shown = False
+        if st.button("Next", shortcut = "Space" if shown else "Enter"):
             st.session_state["random_pair"] = random.choice(list(bag.keys()))
             st.rerun()
 
