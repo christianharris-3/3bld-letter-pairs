@@ -1,32 +1,40 @@
 import random
 
+import bcrypt
 import streamlit as st
 st.set_page_config(layout="wide")
 import json
 import os
 
-FILENAME = "pairs.json"
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWX"
 
 class Funcer:
     def __init__(self, func, args):
         self.func = lambda: func(args)
 
+def get_filename():
+    return f"pairs_{st.session_state.get('username', '')}.json"
+
 def load_data():
-    if os.path.exists(FILENAME):
-        with open(FILENAME, "r") as f:
+    if os.path.exists(get_filename()):
+        with open(get_filename(), "r") as f:
             data = json.load(f)
     else:
         data = {}
-        for a in LETTERS:
-            for b in LETTERS:
-                if a != b:
-                    data[a + b] = ""
+    for a in LETTERS:
+        for b in LETTERS:
+            pair = a+b
+            if a != b and (pair not in data) and len(pair) == 2:
+                data[pair] = ""
     return data
 
 def save_data(data):
-    with open(FILENAME, "w") as f:
-        json.dump(data, f, indent="  ")
+    filtered_data = {}
+    for key, val in data.items():
+        if val != "":
+            filtered_data[key] = val
+    with open(get_filename(), "w") as f:
+        json.dump(filtered_data, f, indent="  ")
 
 def view_letter(pair, data, con):
     with con.form("Edit Word Form", border=False):
@@ -116,29 +124,110 @@ def enter_words(data):
 
     view_letter(pair, data, st.container(border=True))
 
-data = load_data()
+def app():
+    data = load_data()
 
-cols = st.columns(3)
-search = cols[0].button("Search", width="stretch")
-quiz = cols[1].button("Quiz", width="stretch")
-enter = cols[2].button("Enter Words", width="stretch")
+    cols = st.columns(4)
+    search = cols[0].button("Search", width="stretch")
+    quiz = cols[1].button("Quiz", width="stretch")
+    enter = cols[2].button("Enter Words", width="stretch")
 
-if search: st.session_state["current_page"] = "search"
-if quiz: st.session_state["current_page"] = "quiz"
-if enter: st.session_state["current_page"] = "enter_words"
+    if search: st.session_state["current_page"] = "search"
+    if quiz: st.session_state["current_page"] = "quiz"
+    if enter: st.session_state["current_page"] = "enter_words"
 
-if st.session_state.get("current_page", None) is None:
-    st.session_state["current_page"] = "search"
+    if st.session_state.get("current_page", None) is None:
+        st.session_state["current_page"] = "search"
 
-if st.session_state.get("clear_word_input",False):
-    st.session_state["word_edit"] = ""
-    st.session_state["word_input"] = ""
-    st.session_state["clear_word_input"] = False
+    if st.session_state.get("clear_word_input",False):
+        st.session_state["word_edit"] = ""
+        st.session_state["word_input"] = ""
+        st.session_state["clear_word_input"] = False
 
-if st.session_state["current_page"] == "search":
-    letter_search(data)
-elif st.session_state["current_page"] == "quiz":
-    letter_quiz(data)
-elif st.session_state["current_page"] == "enter_words":
-    enter_words(data)
+    if st.session_state["current_page"] == "search":
+        letter_search(data)
+    elif st.session_state["current_page"] == "quiz":
+        letter_quiz(data)
+    elif st.session_state["current_page"] == "enter_words":
+        enter_words(data)
 
+    if cols[3].button(f"{st.session_state['username']}: Logout", width="stretch"):
+        st.session_state["authenticated"] = False
+        st.rerun()
+
+def check_credentials(accounts, username, password):
+    for account in accounts:
+        if username.lower() == account["Username"].lower() and check_password(password, account["Password"]):
+            return True
+    return False
+
+
+def hash_password(password):
+    password_hash = bcrypt.hashpw(
+        password.encode(),
+        bcrypt.gensalt()
+    ).decode()
+    return password_hash
+
+def check_password(password, password_hash):
+    return bcrypt.checkpw(
+        password.encode(),
+        password_hash.encode()
+    )
+
+def login_page():
+    st.markdown("## Login")
+
+    login, register = st.tabs(["Login", "Register"])
+
+    accounts_file = "accounts.json"
+    if not os.path.exists(accounts_file):
+        with open(accounts_file, "w") as f:
+            json.dump([], f, indent="  ")
+    with open(accounts_file, "r") as f:
+        accounts = json.load(f)
+
+    with register:
+        with st.form("register"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            password2 = st.text_input("Repeat Password", type="password")
+
+            submitted = st.form_submit_button("Register")
+
+            if submitted:
+                if username == "" or password == "":
+                    st.error("Username and password can't be empty")
+                    return
+                if password != password2:
+                    st.error("Passwords are not the same")
+                    return
+                for account in accounts:
+                    if account["Username"] == username:
+                        st.error("Username already in use")
+                        return
+                accounts.append({"Username": username, "Password": hash_password(password)})
+                with open(accounts_file, "w") as f:
+                    json.dump(accounts, f, indent="  ")
+                st.success("Account Created")
+    with login:
+        with st.form("sign_in"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+
+            submitted = st.form_submit_button("Login")
+
+            if submitted:
+                if check_credentials(accounts, username, password):
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = username
+                    st.success("Logged in!")
+                    st.rerun()
+                else:
+                    st.error("Invalid Credentials")
+
+
+if st.session_state.get("authenticated", False):
+    app()
+else:
+    login_page()
