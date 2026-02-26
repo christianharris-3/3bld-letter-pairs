@@ -161,7 +161,7 @@ def check_credentials(accounts, username, password):
     for account in accounts:
         if username.lower() == account["Username"].lower() and check_password(password, account["Password"]):
             return True, account["Username"]
-    return False, _
+    return False, None
 
 
 def hash_password(password):
