@@ -126,17 +126,35 @@ def enter_words(data):
 
     view_letter(pair, data, st.container(border=True))
 
+def manage_files(data):
+    st.markdown("# Files")
+
+    if os.path.exists(get_filename()):
+        with open(get_filename(), "r") as f:
+            st.download_button("Download Words File", data=json.dumps(json.load(f), indent="  "), file_name="pairs.json")
+    else:
+        st.markdown("no data to download")
+    file = st.file_uploader("Upload Pairs Json", type="json")
+    if file is not None:
+        data = json.load(file)
+        with open(get_filename(), "w") as f:
+            json.dump(data, f, indent="  ")
+        st.success("Saved upload")
+
+
 def app():
     data = load_data()
 
-    cols = st.columns(4)
+    cols = st.columns(5)
     search = cols[0].button("Search", width="stretch")
     quiz = cols[1].button("Quiz", width="stretch")
     enter = cols[2].button("Enter Words", width="stretch")
+    files = cols[3].button("Files", width="stretch")
 
     if search: st.session_state["current_page"] = "search"
     if quiz: st.session_state["current_page"] = "quiz"
     if enter: st.session_state["current_page"] = "enter_words"
+    if files: st.session_state["current_page"] = "files"
 
     if st.session_state.get("current_page", None) is None:
         st.session_state["current_page"] = "search"
@@ -152,8 +170,10 @@ def app():
         letter_quiz(data)
     elif st.session_state["current_page"] == "enter_words":
         enter_words(data)
+    elif st.session_state["current_page"] == "files":
+        manage_files(data)
 
-    if cols[3].button(f"{st.session_state['username']}: Logout", width="stretch"):
+    if cols[4].button(f"{st.session_state['username']}: Logout", width="stretch"):
         st.session_state["authenticated"] = False
         st.rerun()
 
