@@ -2,7 +2,6 @@ import random
 
 import streamlit as st
 st.set_page_config(layout="wide")
-import pandas as pd
 import json
 import os
 
@@ -34,7 +33,7 @@ def view_letter(pair, data, con):
         st.markdown(f"## Pair {pair}")
 
         word = data[pair]
-        if not (pd.isna(word) or word == "" or word is None):
+        if not (word == "" or word is None):
             st.markdown(f"Word is: {word}")
 
         new_word = st.text_input("Enter Word", key="word_input")
@@ -95,26 +94,38 @@ def letter_quiz(data):
             st.session_state["random_pair"] = random.choice(list(bag.keys()))
         del bag[st.session_state["random_pair"]]
 
-        st.markdown(f"What is the word for {st.session_state["random_pair"]}?")
+        st.markdown(f"What is the word for {st.session_state['random_pair']}?")
         if st.button("Show"):
-            st.markdown(f"Word is \"{data[st.session_state["random_pair"]]}\"")
+            st.markdown(f"Word is \"{data[st.session_state['random_pair']]}\"")
         else:
             st.markdown(f"Word is -----")
         if st.button("Next"):
             st.session_state["random_pair"] = random.choice(list(bag.keys()))
             st.rerun()
 
+def enter_words(data):
+    st.markdown("# Enter Words")
+
+    unused_pairs = []
+    for key, val in data.items():
+        if val == "":
+            unused_pairs.append(key)
+
+    st.markdown(f"There are {len(unused_pairs)} pairs without words")
+    pair = st.selectbox("Select Letter", unused_pairs)
+
+    view_letter(pair, data, st.container(border=True))
 
 data = load_data()
 
-cols = st.columns([1,1])
+cols = st.columns(3)
 search = cols[0].button("Search", width="stretch")
 quiz = cols[1].button("Quiz", width="stretch")
+enter = cols[2].button("Enter Words", width="stretch")
 
-if search:
-    st.session_state["current_page"] = "search"
-if quiz:
-    st.session_state["current_page"] = "quiz"
+if search: st.session_state["current_page"] = "search"
+if quiz: st.session_state["current_page"] = "quiz"
+if enter: st.session_state["current_page"] = "enter_words"
 
 if st.session_state.get("current_page", None) is None:
     st.session_state["current_page"] = "search"
@@ -128,4 +139,6 @@ if st.session_state["current_page"] == "search":
     letter_search(data)
 elif st.session_state["current_page"] == "quiz":
     letter_quiz(data)
+elif st.session_state["current_page"] == "enter_words":
+    enter_words(data)
 
