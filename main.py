@@ -1,8 +1,10 @@
 import math
 import random
+import time
 
 import bcrypt
 import streamlit as st
+# from streamlit_extras import stylable_containers
 st.set_page_config(layout="wide", page_title="3BLD Letter Pairs")
 import json
 import os
@@ -103,88 +105,144 @@ def letter_search(data):
 
     make_grid(st.container(border=True))
 
-def pick_pair(available_pairs):
+def generate_quiz(data):
+    available_pairs = {}
+    for key, val in data.items():
+        if val["word"] != "":
+            available_pairs[key] = val
+
     data = []
     for key, dict_ in available_pairs.items():
+        if st.session_state["test_type"] == "Test All":
+            time_since = (datetime.now().timestamp() - dict_["last_checked"].timestamp()) / 60 / 60 / 24
+            value = math.log2(time_since) - dict_["last_confidence"] + random.random()
 
-        time_since = (datetime.now().timestamp() - dict_["last_checked"].timestamp()) / 60 / 60 / 24
-        value = math.log2(time_since) - dict_["last_confidence"] + random.random()
+            data.append((
+                key,
+                value
+            ))
+        elif st.session_state["test_type"] == "Test Unknown":
+            if dict_["last_confidence"] == 1:
+                data.append((
+                    key, -dict_["last_checked"].timestamp() / 60 / 60 / 24 + random.random()
+                ))
 
-        data.append((
-            key,
-            value
-        ))
 
     data.sort(key=lambda x: x[1], reverse=True)
-    return data[0][0]
+    return [d[0] for d in data]
+
+def pick_pair():
+    current = st.session_state.get("current_quiz", None)
+    if current is None or len(current) == 0:
+        return None
+    return current.pop(0)
 
 def letter_quiz(data):
     st.markdown("# Quiz")
 
-    bag = {}
-    for key, val in data.items():
-        if val["word"] != "":
-            bag[key] = val
+    # test type selection
+    test_type = st.segmented_control("Type", ["Test All", "Test Unknown"], default="Test All")
+    if test_type is not None:
+        st.session_state["test_type"] = test_type
+    if st.session_state.get("test_type", None) is None:
+        st.session_state["test_type"] = "Test All"
 
-    if len(bag) < 2:
-        st.markdown("No words given, can't quiz you on nothing!")
-    else:
-        if st.session_state.get("random_pair", None) is None:
-            st.session_state["random_pair"] = pick_pair(bag)
-        del bag[st.session_state["random_pair"]]
-
-        st.markdown(f"What is the word for {st.session_state['random_pair']}?")
-
-        if st.session_state.get("show_quiz_answer", None) is None:
-            st.session_state["show_quiz_answer"] = False
-
-        show_button = st.button("Show", shortcut="Space")
-        word_container = st.empty()
-        answer_text = f"Word is \"{data[st.session_state['random_pair']]['word']}\""
-        if show_button:
-            word_container.markdown(answer_text)
-            if st.session_state["show_quiz_answer"]:
-                data[st.session_state["random_pair"]]["last_checked"] = datetime.now()
-                save_data(data)
-                st.session_state["random_pair"] = pick_pair(bag)
-                st.session_state["show_quiz_answer"] = False
-                st.rerun()
-            st.session_state["show_quiz_answer"] = True
-
-        if not st.session_state["show_quiz_answer"]:
-            word_container.markdown(f"Word is -----")
+    # start test
+    if st.button("Start Quiz"):
+        st.session_state["show_quiz_stats"] = False
+        quiz_data = generate_quiz(data)
+        if len(quiz_data) > 0:
+            st.session_state["quiz_started"] = True
+            st.session_state["current_quiz"] = generate_quiz(data)
+            st.session_state["current_quiz_length"] = len(st.session_state["current_quiz"])
+            st.session_state["current_quiz_pair"] = pick_pair()
+            st.session_state["current_quiz_stats"] = {
+                "correct": 0,
+                "incorrect": 0,
+                "failed_pairs": {},
+                "start_time": time.time(),
+                "end_time": 0,
+            }
         else:
-            word_container.markdown(answer_text)
+            st.warning("Can't Quiz you on nothing!")
+            st.session_state["quiz_started"] = False
 
-        st.markdown("Select Confidence (1 is low, 3 is high)")
+    if st.session_state.get("quiz_started", False):
+        with st.container(border=True):
 
-        cols = st.columns([1, 1, 1, 2.5], width=300)
+            if st.session_state.get("current_quiz_pair", None) is None:
+                st.session_state["current_quiz_pair"] = pick_pair()
 
-        next_word = 0
-        if cols[0].button("1", shortcut = "1", width="stretch"):
-            next_word = 1
-        if cols[1].button("2", shortcut = "2", width="stretch"):
-            next_word = 2
-        if cols[2].button("3", shortcut = "3", width="stretch"):
-            next_word = 3
-        if cols[3].button("Next", shortcut = "Enter", width="stretch"):
-            next_word = 4
+            st.markdown(f"What is the word for {st.session_state['current_quiz_pair']}?")
 
-        if next_word > 0:
+            if st.session_state.get("show_quiz_answer", None) is None:
+                st.session_state["show_quiz_answer"] = False
+
+            show_button = st.button("Show", shortcut="Space")
+            word_container = st.empty()
+            answer_text = f"Word is \"{data[st.session_state['current_quiz_pair']]['word']}\""
+
             if not st.session_state["show_quiz_answer"]:
+                word_container.markdown(f"Word is -----")
+            else:
+                word_container.markdown(answer_text)
+
+            cols = st.columns([2, 2], width=250)
+
+            next_word = 0
+            if cols[0].button("Fail", shortcut = "1", width="stretch"):
+                next_word = 1
+            if cols[1].button("Success", shortcut = "2", width="stretch"):
+                next_word = 2
+            if show_button:
                 word_container.markdown(answer_text)
                 st.session_state["show_quiz_answer"] = True
-            else:
-                if next_word < 4:
-                    data[st.session_state["random_pair"]]["last_confidence"] = next_word
-                data[st.session_state["random_pair"]]["last_checked"] = datetime.now()
-                save_data(data)
-                st.session_state["random_pair"] = pick_pair(bag)
-                st.session_state["show_quiz_answer"] = False
-                st.rerun()
-        # elif st.session_state["show_quiz_answer"]:
-            # word_container.markdown(f"Word is \"{data[st.session_state['random_pair']]['word']}\"")
-            # st.session_state["show_quiz_answer"] = True
+
+            if next_word > 0:
+                if not st.session_state["show_quiz_answer"]:
+                    word_container.markdown(answer_text)
+                    st.session_state["show_quiz_answer"] = True
+                else:
+                    data[st.session_state["current_quiz_pair"]]["last_confidence"] = next_word
+                    data[st.session_state["current_quiz_pair"]]["last_checked"] = datetime.now()
+                    if next_word == 1:
+                        st.session_state["current_quiz_stats"]["incorrect"] += 1
+                        st.session_state["current_quiz_stats"]["failed_pairs"][
+                            st.session_state["current_quiz_pair"]] = data[st.session_state['current_quiz_pair']]['word']
+                    elif next_word == 2:
+                        st.session_state["current_quiz_stats"]["correct"] += 1
+
+                    save_data(data)
+                    st.session_state["current_quiz_pair"] = pick_pair()
+
+                    if st.session_state["current_quiz_pair"] is None:
+                        st.success("Quiz Complete!")
+                        st.session_state["quiz_started"] = False
+                        st.session_state["show_quiz_stats"] = True
+                        st.session_state["current_quiz_stats"]["end_time"] = time.time()
+                    st.session_state["show_quiz_answer"] = False
+                    st.rerun()
+
+            # Progress bar
+            target = st.session_state["current_quiz_length"]
+            progress = target - len(st.session_state["current_quiz"]) - 1 + (st.session_state["current_quiz_pair"] is None)
+            st.progress(progress/target, f"Progress: {progress}/{target}")
+    if st.session_state.get("show_quiz_stats", False):
+        with st.container(border=True):
+            stats = st.session_state["current_quiz_stats"]
+            time_taken = stats["end_time"] - stats["start_time"]
+            num_words = stats["correct"] + stats["incorrect"]
+
+            st.markdown(f"### Quiz Complete {int(stats['correct']/num_words*100)}%")
+
+            st.markdown(f"Time Taken: {int(time_taken//60)}m {round(time_taken%60)}s")
+            st.progress(stats["correct"]/num_words, f"{stats['correct']}/{num_words} Correct")
+
+            st.markdown("Incorrect Words: ")
+            text = ", ".join([f"{key} -> {word}" for key, word in stats["failed_pairs"].items()])
+            st.markdown(text)
+
+
 
 def enter_words(data):
     st.markdown("# Enter Words")
