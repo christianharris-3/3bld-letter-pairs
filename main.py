@@ -76,21 +76,36 @@ def view_letter(pair, data, con):
 def set_pair(letters):
     st.session_state["letter_search"] = letters
 
-def make_grid(con):
+def make_grid(data, con):
     con.markdown("## Letter Grid")
 
     cols = con.columns(len(LETTERS) + 1)
     for i in range(len(LETTERS)):
         cols[i+1].button(LETTERS[i], key=f"grid_col_title_{LETTERS[i]}")
 
+    st.markdown("""
+    <style>
+    button[kind='primary'] {
+        background-color: rgb(14, 17, 23);
+        color: green;
+        padding: 0;
+        border: 0;
+    }
+    button[kind='primary']:hover {
+        background-color: rgb(14, 17, 23);
+        color: red;
+    }
+    </style>""", unsafe_allow_html=True)
+
     for first in LETTERS:
         cols = con.columns(len(LETTERS)+1)
         cols[0].button(first, key=f"grid_row_title_{first}")
         for i, second in enumerate(LETTERS):
             funcer = Funcer(set_pair, first+second)
+            has_val = data.get(first+second, {"word": ""})["word"] != ""
             cols[i+1].button(
                 first+second, key=f"grid_square_{first}{second}",
-                type="tertiary", on_click=funcer.func,
+                type="primary" if has_val else "tertiary", on_click=funcer.func,
                 disabled=first==second
             )
 
@@ -103,7 +118,7 @@ def letter_search(data):
     if text in data.keys():
         view_letter(text, data, st.container(border=True))
 
-    make_grid(st.container(border=True))
+    make_grid(data, st.container(border=True))
 
 def generate_quiz(data):
     available_pairs = {}
