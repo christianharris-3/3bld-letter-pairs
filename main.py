@@ -28,9 +28,21 @@ def load_data():
     else:
         data = {}
 
+    # convert from old data format
+    for key in data:
+        if "last_checked" in data[key] and "history" not in data[key]:
+            data[key]["history"] = [{
+                "correct": bool(data[key]["last_confidence"]),
+                "timestamp": data[key]["last_checked"],
+                "guess_time": 1
+            }]
+
+
     # convert datetime
     for key in data:
-        data[key]["last_checked"] = datetime.fromisoformat(data[key]["last_checked"])
+        for history_values in data[key]["history"]:
+            if isinstance(history_values["timestamp"], str):
+                history_values["timestamp"] = datetime.fromisoformat(history_values["timestamp"])
 
     # fill out data
     for a in LETTERS:
@@ -39,8 +51,7 @@ def load_data():
             if a != b and (pair not in data) and len(pair) == 2:
                 data[pair] = {
                     "word": "",
-                    "last_confidence": 0,
-                    "last_checked": datetime.now(),
+                    "history": [{"correct": False, "timestamp": datetime.now(), "guess_time": 1}]
                 }
     return data
 
@@ -49,7 +60,8 @@ def save_data(data):
     for key, val in data.items():
         if val["word"] != "":
             filtered_data[key] = copy.deepcopy(val)
-            filtered_data[key]["last_checked"] = filtered_data[key]["last_checked"].isoformat()
+            for history_values in filtered_data[key]["history"]:
+                history_values["timestamp"] = history_values["timestamp"].isoformat()
 
     with open(get_filename(), "w") as f:
         json.dump(filtered_data, f, indent="  ")
@@ -61,6 +73,7 @@ def view_letter(pair, data, con):
         dict_ = data[pair]
         if dict_["word"] != "":
             st.markdown(f"Word is: {dict_['word']}")
+            st.markdown(f"Knowledge Value: {calculate_knowledge_value(dict_['history']):.2f}")
 
         new_word = st.text_input("Enter Word", key="word_input")
         submitted = st.form_submit_button("Save")
@@ -120,6 +133,28 @@ def letter_search(data):
 
     make_grid(data, st.container(border=True))
 
+def calculate_knowledge_value(history):
+    total = 0
+    for history_value in history:
+        time_since = (datetime.now().timestamp() - history_value["timestamp"].timestamp()) / 60 / 60 / 24
+
+        if time_since>1:
+            value = 0.5/time_since
+        else:
+            value = 1 - (time_since**2)/2
+        value = min(max(value, 0), 1)
+
+        time_spent = min(max(history_value["guess_time"], 3), 30)
+
+        value *= (1-(time_spent/40))
+
+        if history_value["correct"]:
+            total += value
+        else:
+            total -= value
+
+    return total
+
 def generate_quiz(data):
     available_pairs = {}
     for key, val in data.items():
@@ -129,17 +164,14 @@ def generate_quiz(data):
     data = []
     for key, dict_ in available_pairs.items():
         if st.session_state["test_type"] == "Test All":
-            time_since = (datetime.now().timestamp() - dict_["last_checked"].timestamp()) / 60 / 60 / 24
-            value = math.log2(time_since) - dict_["last_confidence"] + random.random()
-
             data.append((
                 key,
-                value
+                calculate_knowledge_value(dict_["history"]) + random.random()
             ))
         elif st.session_state["test_type"] == "Test Unknown":
-            if dict_["last_confidence"] == 1:
+            if not dict_["history"].get(-1, {"correct":False}):
                 data.append((
-                    key, -dict_["last_checked"].timestamp() / 60 / 60 / 24 + random.random()
+                    key, random.random()
                 ))
 
 
@@ -176,6 +208,7 @@ def letter_quiz(data):
                 "incorrect": 0,
                 "failed_pairs": {},
                 "start_time": time.time(),
+                "word_start_time": time.time(),
                 "end_time": 0,
             }
         else:
@@ -204,27 +237,37 @@ def letter_quiz(data):
 
             cols = st.columns([2, 2], width=250)
 
-            next_word = 0
+            next_word = -1
             if cols[0].button("Fail", shortcut = "1", width="stretch"):
-                next_word = 1
+                next_word = 0
             if cols[1].button("Success", shortcut = "2", width="stretch"):
-                next_word = 2
+                next_word = 1
             if show_button:
                 word_container.markdown(answer_text)
                 st.session_state["show_quiz_answer"] = True
 
-            if next_word > 0:
+            if next_word > -1:
                 if not st.session_state["show_quiz_answer"]:
                     word_container.markdown(answer_text)
                     st.session_state["show_quiz_answer"] = True
                 else:
-                    data[st.session_state["current_quiz_pair"]]["last_confidence"] = next_word
-                    data[st.session_state["current_quiz_pair"]]["last_checked"] = datetime.now()
-                    if next_word == 1:
+                    # Move to next question
+
+                    # log data
+                    prev_start_time = st.session_state["current_quiz_stats"]["word_start_time"]
+                    st.session_state["current_quiz_stats"]["word_start_time"] = time.time()
+                    data[st.session_state["current_quiz_pair"]]["history"].append({
+                        "correct": bool(next_word),
+                        "timestamp": datetime.now(),
+                        "guess_time": time.time()-prev_start_time
+                    })
+
+                    # log stats
+                    if next_word == 0:
                         st.session_state["current_quiz_stats"]["incorrect"] += 1
                         st.session_state["current_quiz_stats"]["failed_pairs"][
                             st.session_state["current_quiz_pair"]] = data[st.session_state['current_quiz_pair']]['word']
-                    elif next_word == 2:
+                    elif next_word == 1:
                         st.session_state["current_quiz_stats"]["correct"] += 1
 
                     save_data(data)
