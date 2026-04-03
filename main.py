@@ -175,7 +175,7 @@ def generate_quiz(data):
                 ))
 
 
-    data.sort(key=lambda x: x[1], reverse=True)
+    data.sort(key=lambda x: x[1])
     return [d[0] for d in data]
 
 def pick_pair():
